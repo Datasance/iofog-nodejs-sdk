@@ -1,0 +1,57 @@
+name: CI
+on:
+  push: 
+    branches:
+      - develop
+      - release*
+    tags: [v*]
+    paths-ignore:
+      - README.md
+      - CHANGELOG.md
+      - LICENSE
+  pull_request:
+  # Sequence of patterns matched against refs/heads
+    branches:    
+      - develop
+      - release*
+    paths-ignore:
+      - README.md
+      - CHANGELOG.md
+      - LICENSE
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+    name: Preflight
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 20
+    - run: npm ci
+    - run: |
+        npm i -g better-npm-audit
+        npx better-npm-audit audit -p
+    - run: npm run standard
+
+  Publish:
+    needs: [Build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+    name: Publish Artifact
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 20
+
+    - run: sh ${GITHUB_WORKSPACE}/package.sh
+      env: 
+        PAT: ${{ secrets.PAT }}

@@ -15,8 +15,11 @@
 const expect = require('chai').expect
 const sinon = require('sinon')
 const proxyquire = require('proxyquire')
-const request = require('request')
+const axios = require('axios')
 const WS = require('ws')
+const logger = require('../logger')
+const FileLogger = require('../fileLogger')
+const fs = require('fs')
 
 const execStub = sinon.stub()
 const ioFogClient = proxyquire('../ioFogClient', {
@@ -26,17 +29,17 @@ const ioFogClient = proxyquire('../ioFogClient', {
 describe('ioFogClient', () => {
   describe('init', () => {
     it('Should set host to 127.0.0.1', (done) => {
-      const logStub = sinon.stub(console, 'log')
-      const warnStub = sinon.stub(console, 'warn')
+      const error = 'This is an error'
+      const stdError = 'This was on stderr'
+      const logStub = sinon.stub(logger, 'error')
+      const warnStub = sinon.stub(logger, 'warn')
       const host = 'iofog-test'
       const protocol = 'protocol'
       const port = 1234
-      const error = 'This is an error'
-      const stdError = 'This was on stderr'
       const cb = () => {
         expect(execStub.args[0][0]).to.equal(`ping -c 3 ${host}`)
-        expect(logStub.args[0]).to.deep.equal(['STERR :\n', stdError])
-        expect(logStub.args[1]).to.deep.equal(['ERROR :\n', error])
+        expect(logStub.args[0]).to.deep.equal([stdError])
+        expect(logStub.args[1]).to.deep.equal([error])
         expect(warnStub.args[0][0]).to.equal(`Host: '${host}' is not reachable. Changing to '127.0.0.1'`)
         expect(ioFogClient.getURL(protocol, '')).to.equal(`${protocol}://127.0.0.1:${port}`)
         logStub.restore()
@@ -198,7 +201,7 @@ describe('ioFogClient', () => {
     const body = { id: 'id', timestamp: 'timestamp' }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -209,10 +212,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()
@@ -295,7 +299,7 @@ describe('ioFogClient', () => {
     const body = { id: 'id', timestamp: 'timestamp', messages }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -306,10 +310,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()
@@ -396,7 +401,7 @@ describe('ioFogClient', () => {
     }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -407,10 +412,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()
@@ -418,7 +424,7 @@ describe('ioFogClient', () => {
     })
 
     it('Should fail if publishers in not an array', () => {
-      const errorStub = sinon.stub(console, 'error')
+      const errorStub = sinon.stub(logger, 'error')
       ioFogClient.getMessagesByQuery(startdate, enddate, null, {})
       expect(errorStub.args[0]).to.deep.equal(['getMessagesByQuery: Publishers input is not array!'])
       errorStub.restore()
@@ -498,7 +504,7 @@ describe('ioFogClient', () => {
     const body = { id: 'id', timestamp: 'timestamp', config: JSON.stringify(config) }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -509,10 +515,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()
@@ -706,6 +713,49 @@ describe('ioFogClient', () => {
         onMessages,
         onError
       })
+    })
+  })
+  describe('FileLogger', function () {
+    const dir = '/temp/log/'
+    const nestedDir = '/temp/log/iofog-microservices/'
+    const warnStub = sinon.stub(FileLogger.prototype, 'warn')
+    const infoStub = sinon.stub(FileLogger.prototype, 'info')
+    const info = 'I am just info'
+    const warning = 'Could not open the log file /var/log/not-exits/my-microservice.log. Reverting to std output logging'
+
+    after(function () {
+      sinon.restore()
+      if (fs.existsSync(dir)) {
+        fs.rmdir(dir)
+      }
+      if (fs.existsSync(nestedDir)) {
+        fs.rmdir(nestedDir)
+      }
+    })
+
+    it('file Logger should warn when directory is not created', (done) => {
+      const fileLogger = new FileLogger('my-microservice.log', 'DAA-DAAN-DEVICEID', '/var/log/not-exits/')
+      expect(warnStub.args[0]).to.deep.equal([warning])
+      fileLogger.info('I am just info')
+      expect(infoStub.args[0]).to.deep.equal([info])
+      warnStub.restore()
+      done()
+    })
+
+    it('file Logger should create directory', (done) => {
+      const fileLogger = new FileLogger('my-microservice.log', 'DAA-DAAN-DEVICEID', dir)
+      warnStub.neverCalledWith(warning)
+      fileLogger.info('I am just info')
+      expect(infoStub.args[0]).to.deep.equal([info])
+      done()
+    })
+
+    it('file Logger should create nested directory', (done) => {
+      const fileLogger = new FileLogger('my-microservice.log', 'DAA-DAAN-DEVICEID', nestedDir)
+      warnStub.neverCalledWith(warning)
+      fileLogger.info('I am just info')
+      expect(infoStub.args[0]).to.deep.equal([info])
+      done()
     })
   })
 })

@@ -19,11 +19,13 @@
  */
 
 const exec = require('child_process').exec
-const request = require('request')
+const axios = require('axios')
 const WebSocket = require('ws')
 
 exports.ioMessageUtil = require('./lib/ioMessageUtil')
 exports.byteUtils = require('./lib/byteUtils')
+exports.Logger = require('./logger')
+exports.FileLogger = require('./fileLogger')
 
 const OPCODE_PING = 0x9
 const OPCODE_PONG = 0xA
@@ -31,6 +33,7 @@ const OPCODE_ACK = 0xB
 const OPCODE_CONTROL_SIGNAL = 0xC
 const OPCODE_MSG = 0xD
 const OPCODE_RECEIPT = 0xE
+const OPCODE_EDGE_RESOURCE_SIGNAL = 0xF
 
 let ELEMENT_ID = 'NOT_DEFINED' // publisher's ID
 let SSL = false
@@ -44,6 +47,8 @@ const wsConnectTimeout = 1000
 
 let wsMessage
 let wsControl
+
+const logger = exports.Logger
 
 require('console-stamp')(
   console,
@@ -92,12 +97,12 @@ exports.init = function (pHost, pPort, containerId, mainCb) {
   exec('ping -c 3 ' + host, function checkHost (error, stdout, stderr) {
     if (stderr || error) {
       if (stderr) {
-        console.log('STERR :\n', stderr)
+        logger.error(stderr)
       }
       if (error) {
-        console.log('ERROR :\n', error)
+        logger.error(error)
       }
-      console.warn('Host: \'' + host + '\' is not reachable. Changing to \'127.0.0.1\'')
+      logger.warn('Host: \'' + host + '\' is not reachable. Changing to \'127.0.0.1\'')
       host = '127.0.0.1'
     }
     mainCb()
@@ -193,7 +198,7 @@ exports.getMessagesByQuery = function (startdate, enddate, publishers, cb) {
         id: ELEMENT_ID,
         timeframestart: startdate,
         timeframeend: enddate,
-        publishers: publishers
+        publishers
       },
       function getQueryMsgs (body) {
         if (body.messages) {
@@ -202,7 +207,7 @@ exports.getMessagesByQuery = function (startdate, enddate, publishers, cb) {
       }
     )
   } else {
-    console.error('getMessagesByQuery: Publishers input is not array!')
+    logger.error('getMessagesByQuery: Publishers input is not array!')
   }
 }
 
@@ -224,7 +229,7 @@ exports.getConfig = function (cb) {
         try {
           configJSON = JSON.parse(body.config)
         } catch (error) {
-          console.error('There was an error parsing config to JSON: ', error)
+          logger.error(error, 'There was an error parsing config to JSON')
         }
         cb.onNewConfig(configJSON)
       }
@@ -233,9 +238,36 @@ exports.getConfig = function (cb) {
 }
 
 /**
+ * Gets new configurations for the container
+ *
+ * @param <Object> cb - object with callback functions (onError, onBadRequest, onEdgeResources)
+ */
+exports.getEdgeResources = function (cb) {
+  makeHttpRequest(
+    cb,
+    '/v2/edgeResources',
+    {
+      id: ELEMENT_ID
+    },
+    function getEdgeResourcesList (body) {
+      if (body.edgeResources) {
+        let edgeResourceList = []
+        try {
+          edgeResourceList = JSON.parse(body.edgeResources)
+        } catch (error) {
+          logger.error(error, 'There was an error parsing Edge Resources to JSON')
+        }
+        cb.onEdgeResources(edgeResourceList)
+      }
+    },
+    'get'
+  )
+}
+
+/**
  * Opens WebSocket Control connection to ioFog
  *
- * @param <Object> cb - object with callback functions (onError, onNewConfigSignal)
+ * @param <Object> cb - object with callback functions (onError, onNewConfigSignal, onEdgeResourceUpdatedSignal)
  */
 exports.wsControlConnection = function (cb) {
   openWSConnection(
@@ -244,9 +276,20 @@ exports.wsControlConnection = function (cb) {
     function wsHandleControlData (data, flags) {
       if (module.exports.byteUtils.isBinary(data) && data.length > 0) {
         const opcode = data[0]
-        if (opcode === OPCODE_CONTROL_SIGNAL) {
-          cb.onNewConfigSignal()
-          sendAck(wsControl)
+        switch (opcode) {
+          case OPCODE_CONTROL_SIGNAL: {
+            cb.onNewConfigSignal()
+            sendAck(wsControl)
+            break
+          }
+          case OPCODE_EDGE_RESOURCE_SIGNAL: {
+            cb.onEdgeResourceUpdatedSignal()
+            sendAck(wsControl)
+            break
+          }
+          default: {
+            break
+          }
         }
       }
     }
@@ -285,7 +328,7 @@ exports.wsMessageConnection = function (onOpenSocketCb, cb) {
           size = data[2]
           let timestamp = 0
           if (size) {
-            timestamp = data.readUIntBE(pos, size)
+            timestamp = exports.byteUtils.readNumberFromBytes(data, pos, size)
           }
           cb.onMessageReceipt(messageId, timestamp)
           sendAck(wsMessage)
@@ -329,7 +372,7 @@ exports.wsCloseMessageConnection = function (cb) {
  */
 exports.wsSendMessage = function (ioMsg) {
   if (!wsMessage || wsMessage.readyState !== WebSocket.OPEN) {
-    console.error('wsSendMessage: socket is not open.')
+    logger.error('wsSendMessage: socket is not open.')
     return
   }
   ioMsg.publisher = ELEMENT_ID
@@ -349,7 +392,7 @@ function sendAck (ws) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(buffer, { binary: true, mask: true })
   } else {
-    console.warn('Unable to send ACKNOWLEDGE: WS connection isn\'t open. ')
+    logger.warn('Unable to send ACKNOWLEDGE: WS connection isn\'t open. ')
   }
 }
 
@@ -375,7 +418,7 @@ function sendPong (ws) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.pong(buffer, true)
   } else {
-    console.warn('Unable to send PONG: WS connection isn\'t open. ')
+    logger.warn('Unable to send PONG: WS connection isn\'t open. ')
   }
 }
 
@@ -425,26 +468,30 @@ exports.getURL = function (protocol, url) {
  * @param <Object> json - JSON <Object> to send
  * @param <Function> onResponseCb - callback to process response body
  */
-function makeHttpRequest (listenerCb, relativeUrl, json, onResponseCb) {
+function makeHttpRequest (listenerCb, relativeUrl, json, onResponseCb, method) {
   const endpoint = exports.getURL(getHttpProtocol(), relativeUrl)
-  request.post(
-    {
-      url: endpoint,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      json: json
+  const config = {
+    url: endpoint,
+    method: method || 'post',
+    headers: {
+      'Content-Type': 'application/json'
     },
-    function handleHttpResponse (err, resp, body) {
-      if (err) {
-        return listenerCb.onError(err)
+    data: json
+  }
+
+  axios(config)
+    .then((response) => {
+      if (response.status === 400) {
+        return listenerCb.onBadRequest(response.data)
       }
-      if (resp && resp.statusCode === 400) {
-        return listenerCb.onBadRequest(body)
+      onResponseCb(response.data)
+    })
+    .catch((error) => {
+      if (error.response && error.response.status === 400) {
+        return listenerCb.onBadRequest(error.response.data)
       }
-      onResponseCb(body)
-    }
-  )
+      listenerCb.onError(error)
+    })
 }
 
 /**
@@ -509,7 +556,7 @@ function openWSConnection (listenerCb, relativeUrl, onDataCb, onOpenSocketCb) {
           wsConnectMessageTimeoutAttempts = 0
           break
         default:
-          console.warn('No global socket defined.')
+          logger.warn('No global socket defined.')
       }
       if (onOpenSocketCb) {
         onOpenSocketCb(module.exports)
@@ -528,7 +575,7 @@ function setGlobalWS (relativeUrl, ws) {
       wsMessage = ws
       break
     default:
-      console.warn('No global socket defined.')
+      logger.warn('No global socket defined.')
   }
 }
 
@@ -559,7 +606,7 @@ function processArgs (args) {
  * @param <Function> onOpenSocketCb - function that will be triggered when connection is opened (call wsSendMessage in this function)
  */
 function wsReconnect (relativeUrl, ws, listenerCb, onDataCb, onOpenSocketCb) {
-  console.info('Reconnecting to ioFog via socket.')
+  logger.info('Reconnecting to ioFog via socket.')
   let timeout = 0
   if (wsConnectControlTimeoutAttempts < wsConnectAttemptsLimit && relativeUrl === '/v2/control/socket/id/') {
     timeout = wsConnectTimeout * Math.pow(2, wsConnectControlTimeoutAttempts)
