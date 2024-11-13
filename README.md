@@ -14,7 +14,7 @@ This module lets you easily build a micro-service. It gives you all the function
 
 import module:
 ```javascript
-  var ioFogClient = require('@iofog/nodejs-sdk');
+  var ioFogClient = require('@datasance/iofog-nodejs-sdk');
 ```
 
 set up custom host, port and container's ID (in case of no params default values for host and port will be used: 'ioFog', 54321)

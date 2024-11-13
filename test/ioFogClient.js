@@ -15,7 +15,7 @@
 const expect = require('chai').expect
 const sinon = require('sinon')
 const proxyquire = require('proxyquire')
-const request = require('request')
+const axios = require('axios')
 const WS = require('ws')
 const logger = require('../logger')
 const FileLogger = require('../fileLogger')
@@ -201,7 +201,7 @@ describe('ioFogClient', () => {
     const body = { id: 'id', timestamp: 'timestamp' }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -212,10 +212,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()
@@ -298,7 +299,7 @@ describe('ioFogClient', () => {
     const body = { id: 'id', timestamp: 'timestamp', messages }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -309,10 +310,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()
@@ -399,7 +401,7 @@ describe('ioFogClient', () => {
     }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -410,10 +412,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()
@@ -501,7 +504,7 @@ describe('ioFogClient', () => {
     const body = { id: 'id', timestamp: 'timestamp', config: JSON.stringify(config) }
 
     before(() => {
-      postStub = sinon.stub(request, 'post')
+      postStub = sinon.stub(axios, 'post')
     })
 
     after(() => {
@@ -512,10 +515,11 @@ describe('ioFogClient', () => {
       execStub.callsFake((command, cb) => {
         cb(null, null, null)
       })
-      postStub.callsFake((opt, cb) => {
-        const err = null
-        const resp = { statusCode: 200 }
-        cb(err, resp, body)
+      postStub.callsFake(() => {
+        return Promise.resolve({
+          status: 200,
+          data: body
+        })
       })
       ioFogClient.init(null, null, 'NOT_DEFINED', () => {
         done()

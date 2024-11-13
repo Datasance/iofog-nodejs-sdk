@@ -19,7 +19,7 @@
  */
 
 const exec = require('child_process').exec
-const request = require('request')
+const axios = require('axios')
 const WebSocket = require('ws')
 
 exports.ioMessageUtil = require('./lib/ioMessageUtil')
@@ -198,7 +198,7 @@ exports.getMessagesByQuery = function (startdate, enddate, publishers, cb) {
         id: ELEMENT_ID,
         timeframestart: startdate,
         timeframeend: enddate,
-        publishers: publishers
+        publishers
       },
       function getQueryMsgs (body) {
         if (body.messages) {
@@ -470,25 +470,28 @@ exports.getURL = function (protocol, url) {
  */
 function makeHttpRequest (listenerCb, relativeUrl, json, onResponseCb, method) {
   const endpoint = exports.getURL(getHttpProtocol(), relativeUrl)
-  const requestFn = request[method] || request.post
-  requestFn(
-    {
-      url: endpoint,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      json: json
+  const config = {
+    url: endpoint,
+    method: method || 'post',
+    headers: {
+      'Content-Type': 'application/json'
     },
-    function handleHttpResponse (err, resp, body) {
-      if (err) {
-        return listenerCb.onError(err)
+    data: json
+  }
+
+  axios(config)
+    .then((response) => {
+      if (response.status === 400) {
+        return listenerCb.onBadRequest(response.data)
       }
-      if (resp && resp.statusCode === 400) {
-        return listenerCb.onBadRequest(body)
+      onResponseCb(response.data)
+    })
+    .catch((error) => {
+      if (error.response && error.response.status === 400) {
+        return listenerCb.onBadRequest(error.response.data)
       }
-      onResponseCb(body)
-    }
-  )
+      listenerCb.onError(error)
+    })
 }
 
 /**

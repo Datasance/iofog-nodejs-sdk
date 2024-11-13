@@ -1,6 +1,6 @@
 {
-  "name": "@iofog/nodejs-sdk",
-  "version": "3.0.0-dev",
+  "name": "@datasance/iofog-nodejs-sdk",
+  "version": "3.0.1",
   "description": "Native node.js SDK for Eclipse ioFog development.",
   "main": "ioFogClient.js",
   "scripts": {
@@ -14,20 +14,20 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ioFog/iofog-nodejs-sdk.git"
+    "url": "https://github.com/datasance/iofog-nodejs-sdk.git"
   },
   "author": "Eclipse ioFog",
   "license": "EPL-2.0",
   "bugs": {
-    "url": "https://github.com/ioFog/iofog-nodejs-sdk/issues"
+    "url": "https://github.com/datasance/iofog-nodejs-sdk/issues"
   },
-  "homepage": "https://github.com/ioFog/iofog-nodejs-sdk#readme",
+  "homepage": "https://github.com/datasance/iofog-nodejs-sdk#readme",
   "dependencies": {
     "console-stamp": "^0.2.10",
     "logrotator": "^1.1.0",
     "path": "^0.12.7",
     "pino": "^6.6.1",
-    "request": "2.88.0",
+    "axios": "1.7.4",
     "ws": "^7.5.7"
   },
   "devDependencies": {
